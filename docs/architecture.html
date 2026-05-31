@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Real-Time Payment Reconciliation — Architecture</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f1f5f9;
+    font-family: 'Segoe UI', -apple-system, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 48px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 5px;
+    letter-spacing: -0.4px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 28px;
+    letter-spacing: 1.2px;
+  }
+  svg { display: block; max-width: 100%; height: auto; }
+</style>
+</head>
+<body>
+
+<h1>Real-Time Payment Reconciliation Platform</h1>
+<p class="subtitle">KAFKA &nbsp;·&nbsp; SPARK STRUCTURED STREAMING &nbsp;·&nbsp; DELTA LAKE &nbsp;·&nbsp; SNOWFLAKE &nbsp;·&nbsp; DATABRICKS</p>
+
+<svg width="1300" height="730" viewBox="0 0 1300 730"
+     xmlns="http://www.w3.org/2000/svg">
+
+  <!-- ══════════════════════════════════════════════
+       DEFS — arrow markers
+  ══════════════════════════════════════════════ -->
+  <defs>
+    <marker id="a-blue"   markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#3b82f6"/></marker>
+    <marker id="a-amber"  markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#f59e0b"/></marker>
+    <marker id="a-red"    markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#ef4444"/></marker>
+    <marker id="a-green"  markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#22c55e"/></marker>
+    <marker id="a-sky"    markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#0ea5e9"/></marker>
+    <marker id="a-purple" markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#a855f7"/></marker>
+    <marker id="a-gray"   markerWidth="7" markerHeight="6" refX="5" refY="3" orient="auto"><polygon points="0,0 7,3 0,6" fill="#94a3b8"/></marker>
+  </defs>
+
+  <!-- ══════════════════════════════════════════════
+       ZONE BACKGROUNDS
+  ══════════════════════════════════════════════ -->
+
+  <!-- Sources -->
+  <rect x="4"   y="50" width="178" height="622" rx="12" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="93"  y="70" font-size="10" font-weight="700" fill="#1d4ed8" text-anchor="middle" letter-spacing="1">DATA SOURCES</text>
+
+  <!-- Kafka -->
+  <rect x="192" y="50" width="196" height="622" rx="12" fill="#fffbeb" stroke="#fde68a" stroke-width="1.5"/>
+  <text x="290" y="70" font-size="10" font-weight="700" fill="#b45309" text-anchor="middle" letter-spacing="1">MESSAGE BUS · KAFKA</text>
+
+  <!-- Processing -->
+  <rect x="398" y="50" width="206" height="622" rx="12" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="501" y="70" font-size="10" font-weight="700" fill="#15803d" text-anchor="middle" letter-spacing="1">SPARK PROCESSING LAYERS</text>
+
+  <!-- Storage -->
+  <rect x="614" y="50" width="196" height="622" rx="12" fill="#fdf4ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="712" y="70" font-size="10" font-weight="700" fill="#7e22ce" text-anchor="middle" letter-spacing="1">STORAGE &amp; SERVING</text>
+
+  <!-- Infrastructure -->
+  <rect x="820" y="50" width="474" height="622" rx="12" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="1057" y="70" font-size="10" font-weight="700" fill="#334155" text-anchor="middle" letter-spacing="1">INFRASTRUCTURE &amp; OBSERVABILITY</text>
+
+
+  <!-- ══════════════════════════════════════════════
+       COMPONENT BOXES
+       Notation: box starts at (x,y), w×h, center (cx,cy)
+  ══════════════════════════════════════════════ -->
+
+  <!-- ── SOURCES ── -->
+
+  <!-- Payment Gateway  cx=93, cy=162 -->
+  <rect x="12"  y="138" width="162" height="48" rx="8" fill="white" stroke="#3b82f6" stroke-width="2"/>
+  <text x="93"  y="157" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">Payment Gateway</text>
+  <text x="93"  y="172" font-size="9.5"  fill="#64748b"  text-anchor="middle">POS · Online · ATM · Mobile</text>
+
+  <!-- Acquiring Bank  cx=93, cy=464 -->
+  <rect x="12"  y="440" width="162" height="48" rx="8" fill="white" stroke="#3b82f6" stroke-width="2"/>
+  <text x="93"  y="459" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">Acquiring Bank</text>
+  <text x="93"  y="474" font-size="9.5"  fill="#64748b"  text-anchor="middle">Settlement batches · 5–15 min lag</text>
+
+
+  <!-- ── KAFKA TOPICS ── -->
+
+  <!-- raw-transactions  cx=290, cy=162 -->
+  <rect x="202" y="138" width="176" height="48" rx="8" fill="white" stroke="#f59e0b" stroke-width="2"/>
+  <text x="290" y="155" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">raw-transactions</text>
+  <text x="290" y="168" font-size="9"    fill="#64748b"  text-anchor="middle">6 partitions · 7-day retention</text>
+  <text x="290" y="180" font-size="9"    fill="#64748b"  text-anchor="middle">acks=all · enable.idempotence=true</text>
+
+  <!-- dlq-transactions  cx=290, cy=278 -->
+  <rect x="202" y="254" width="176" height="48" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+  <text x="290" y="272" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">dlq-transactions</text>
+  <text x="290" y="287" font-size="9"    fill="#64748b"  text-anchor="middle">Dead Letter Queue · 30-day TTL</text>
+
+  <!-- settlement-expectations  cx=290, cy=464 -->
+  <rect x="202" y="440" width="176" height="48" rx="8" fill="white" stroke="#f59e0b" stroke-width="2"/>
+  <text x="290" y="457" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">settlement-expectations</text>
+  <text x="290" y="470" font-size="9"    fill="#64748b"  text-anchor="middle">3 partitions · 30-day retention</text>
+  <text x="290" y="482" font-size="9"    fill="#64748b"  text-anchor="middle">delayed 5–15 min after transaction</text>
+
+  <!-- reconciliation-alerts  cx=290, cy=574 -->
+  <rect x="202" y="550" width="176" height="48" rx="8" fill="white" stroke="#a855f7" stroke-width="2"/>
+  <text x="290" y="567" font-size="11.5" font-weight="600" fill="#0f172a" text-anchor="middle">reconciliation-alerts</text>
+  <text x="290" y="580" font-size="9"    fill="#64748b"  text-anchor="middle">3 partitions · CRITICAL / HIGH routing</text>
+  <text x="290" y="592" font-size="9"    fill="#64748b"  text-anchor="middle">sub-second · foreachBatch side-effect</text>
+
+
+  <!-- ── SPARK PROCESSING ── -->
+
+  <!-- Bronze Ingestion  cx=501, cy=163 -->
+  <rect x="407" y="132" width="188" height="62" rx="8" fill="white" stroke="#d97706" stroke-width="2.5"/>
+  <circle cx="426" cy="148" r="6" fill="#d97706" opacity="0.8"/>
+  <text x="501" y="152" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Bronze Ingestion</text>
+  <text x="501" y="167" font-size="9"    fill="#64748b"  text-anchor="middle">5 quality gates · DLQ routing</text>
+  <text x="501" y="179" font-size="9"    fill="#64748b"  text-anchor="middle">10 s micro-batch · 50 k max offsets</text>
+
+  <!-- Silver Dedup  cx=501, cy=334 -->
+  <rect x="407" y="310" width="188" height="62" rx="8" fill="white" stroke="#94a3b8" stroke-width="2.5"/>
+  <circle cx="426" cy="326" r="6" fill="#94a3b8" opacity="0.9"/>
+  <text x="501" y="330" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Silver Dedup</text>
+  <text x="501" y="345" font-size="9"    fill="#64748b"  text-anchor="middle">Delta MERGE · (txn_id, merchant_id)</text>
+  <text x="501" y="357" font-size="9"    fill="#64748b"  text-anchor="middle">15 s trigger · merchant enrichment</text>
+
+  <!-- Gold Reconciliation  cx=501, cy=466 -->
+  <rect x="407" y="440" width="188" height="62" rx="8" fill="white" stroke="#eab308" stroke-width="2.5"/>
+  <circle cx="426" cy="456" r="6" fill="#eab308" opacity="0.9"/>
+  <text x="501" y="460" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Gold Reconciliation</text>
+  <text x="501" y="475" font-size="9"    fill="#64748b"  text-anchor="middle">Stream-to-stream join · 20 s trigger</text>
+  <text x="501" y="487" font-size="9"    fill="#64748b"  text-anchor="middle">5-tier anomaly · RocksDB state store</text>
+
+
+  <!-- ── STORAGE &amp; SERVING ── -->
+
+  <!-- Delta Lake  cx=712, cy=163 -->
+  <rect x="624" y="132" width="176" height="62" rx="8" fill="white" stroke="#22c55e" stroke-width="2"/>
+  <text x="712" y="153" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Delta Lake</text>
+  <text x="712" y="167" font-size="9"    fill="#64748b"  text-anchor="middle">Bronze · Silver · Gold layers</text>
+  <text x="712" y="180" font-size="9"    fill="#64748b"  text-anchor="middle">ACID · time-travel · MERGE upsert</text>
+
+  <!-- Snowflake  cx=712, cy=466 -->
+  <rect x="624" y="440" width="176" height="62" rx="8" fill="white" stroke="#0ea5e9" stroke-width="2"/>
+  <text x="712" y="460" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Snowflake</text>
+  <text x="712" y="475" font-size="9"    fill="#64748b"  text-anchor="middle">RECONCILIATION_DB · 90-day TTL</text>
+  <text x="712" y="488" font-size="9"    fill="#64748b"  text-anchor="middle">Bulk COPY · every 5 min scheduled</text>
+
+  <!-- Alert Notifications  cx=712, cy=574 -->
+  <rect x="624" y="550" width="176" height="48" rx="8" fill="white" stroke="#ef4444" stroke-width="2"/>
+  <text x="712" y="568" font-size="12"   font-weight="700" fill="#0f172a" text-anchor="middle">Alert Notifications</text>
+  <text x="712" y="583" font-size="9"    fill="#64748b"  text-anchor="middle">CRITICAL / HIGH severity · JSON payload</text>
+
+
+  <!-- ── INFRASTRUCTURE ── -->
+
+  <!-- Left column cx=910 -->
+  <rect x="830" y="110" width="168" height="44" rx="7" fill="white" stroke="#f97316" stroke-width="1.5"/>
+  <text x="914" y="128" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Databricks Jobs</text>
+  <text x="914" y="143" font-size="9"   fill="#64748b"  text-anchor="middle">4 jobs · m5d.xlarge · auto-scale</text>
+
+  <rect x="830" y="168" width="168" height="44" rx="7" fill="white" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="914" y="186" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Confluent Schema Registry</text>
+  <text x="914" y="201" font-size="9"   fill="#64748b"  text-anchor="middle">Avro · BACKWARD compatibility</text>
+
+  <rect x="830" y="226" width="168" height="44" rx="7" fill="white" stroke="#a855f7" stroke-width="1.5"/>
+  <text x="914" y="244" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Great Expectations</text>
+  <text x="914" y="259" font-size="9"   fill="#64748b"  text-anchor="middle">Bronze · Silver · Gold suites</text>
+
+  <rect x="830" y="284" width="168" height="44" rx="7" fill="white" stroke="#ef4444" stroke-width="1.5"/>
+  <text x="914" y="302" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Prometheus Metrics</text>
+  <text x="914" y="317" font-size="9"   fill="#64748b"  text-anchor="middle">8 metrics · SLA breach detection</text>
+
+  <rect x="830" y="342" width="168" height="44" rx="7" fill="white" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="914" y="360" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">structlog</text>
+  <text x="914" y="375" font-size="9"   fill="#64748b"  text-anchor="middle">JSON logs · correlation_id tracing</text>
+
+  <rect x="830" y="400" width="168" height="44" rx="7" fill="white" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="914" y="418" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">GitHub Actions CI/CD</text>
+  <text x="914" y="433" font-size="9"   fill="#64748b"  text-anchor="middle">ruff · mypy · pytest · deploy</text>
+
+  <!-- Right column cx=1157 -->
+  <rect x="1018" y="110" width="266" height="44" rx="7" fill="white" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="1151" y="128" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">RocksDB State Store</text>
+  <text x="1151" y="143" font-size="9"   fill="#64748b"  text-anchor="middle">1.8 M event window · 30-min watermark TTL</text>
+
+  <rect x="1018" y="168" width="266" height="44" rx="7" fill="white" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="1151" y="186" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Snowflake RBAC</text>
+  <text x="1151" y="201" font-size="9"   fill="#64748b"  text-anchor="middle">Column masking · ENGINEER + ANALYST roles</text>
+
+  <rect x="1018" y="226" width="266" height="44" rx="7" fill="white" stroke="#22c55e" stroke-width="1.5"/>
+  <text x="1151" y="244" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Pydantic Config + .env</text>
+  <text x="1151" y="259" font-size="9"   fill="#64748b"  text-anchor="middle">Type-safe settings validation · env injection</text>
+
+  <rect x="1018" y="284" width="266" height="44" rx="7" fill="white" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="1151" y="302" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Confluent Cloud (Production)</text>
+  <text x="1151" y="317" font-size="9"   fill="#64748b"  text-anchor="middle">Managed Kafka · 7 × 24/7 availability</text>
+
+  <rect x="1018" y="342" width="266" height="44" rx="7" fill="white" stroke="#f97316" stroke-width="1.5"/>
+  <text x="1151" y="360" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Databricks Asset Bundle</text>
+  <text x="1151" y="375" font-size="9"   fill="#64748b"  text-anchor="middle">IaC · staging + production targets</text>
+
+  <rect x="1018" y="400" width="266" height="44" rx="7" fill="white" stroke="#0ea5e9" stroke-width="1.5"/>
+  <text x="1151" y="418" font-size="11"  font-weight="600" fill="#0f172a" text-anchor="middle">Snowflake Analytical Views</text>
+  <text x="1151" y="433" font-size="9"   fill="#64748b"  text-anchor="middle">V_DAILY_SUMMARY · V_CRITICAL_ANOMALIES_24H</text>
+
+  <!-- ── METRICS PANEL ── -->
+  <rect x="830" y="462" width="454" height="178" rx="10" fill="white" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="1057" y="484" font-size="10" font-weight="700" fill="#334155" text-anchor="middle" letter-spacing="0.8">PIPELINE PERFORMANCE METRICS</text>
+
+  <!-- Row 1 -->
+  <text x="895"  y="513" font-size="17" font-weight="700" fill="#1d4ed8" text-anchor="middle">1,000 TPS</text>
+  <text x="895"  y="528" font-size="9.5" fill="#64748b" text-anchor="middle">Peak throughput</text>
+
+  <text x="1000" y="513" font-size="17" font-weight="700" fill="#15803d" text-anchor="middle">5 min</text>
+  <text x="1000" y="528" font-size="9.5" fill="#64748b" text-anchor="middle">Gold freshness SLA</text>
+
+  <text x="1108" y="513" font-size="17" font-weight="700" fill="#b45309" text-anchor="middle">0.01%</text>
+  <text x="1108" y="528" font-size="9.5" fill="#64748b" text-anchor="middle">Amount tolerance</text>
+
+  <text x="1220" y="513" font-size="17" font-weight="700" fill="#7e22ce" text-anchor="middle">2.6%</text>
+  <text x="1220" y="528" font-size="9.5" fill="#64748b" text-anchor="middle">Anomaly rate</text>
+
+  <!-- Row 2 -->
+  <text x="895"  y="557" font-size="17" font-weight="700" fill="#dc2626" text-anchor="middle">5-tier</text>
+  <text x="895"  y="572" font-size="9.5" fill="#64748b" text-anchor="middle">Severity classes</text>
+
+  <text x="1000" y="557" font-size="17" font-weight="700" fill="#0891b2" text-anchor="middle">~360 MB</text>
+  <text x="1000" y="572" font-size="9.5" fill="#64748b" text-anchor="middle">State store size</text>
+
+  <text x="1108" y="557" font-size="17" font-weight="700" fill="#059669" text-anchor="middle">EOS</text>
+  <text x="1108" y="572" font-size="9.5" fill="#64748b" text-anchor="middle">Exactly-once semantics</text>
+
+  <text x="1220" y="557" font-size="17" font-weight="700" fill="#7c3aed" text-anchor="middle">90 days</text>
+  <text x="1220" y="572" font-size="9.5" fill="#64748b" text-anchor="middle">Delta time-travel TTL</text>
+
+  <!-- Row 3 -->
+  <text x="895"  y="601" font-size="17" font-weight="700" fill="#b45309" text-anchor="middle">6</text>
+  <text x="895"  y="616" font-size="9.5" fill="#64748b" text-anchor="middle">Kafka partitions (raw)</text>
+
+  <text x="1000" y="601" font-size="17" font-weight="700" fill="#0284c7" text-anchor="middle">30 min</text>
+  <text x="1000" y="616" font-size="9.5" fill="#64748b" text-anchor="middle">Settlement watermark</text>
+
+  <text x="1108" y="601" font-size="17" font-weight="700" fill="#16a34a" text-anchor="middle">4</text>
+  <text x="1108" y="616" font-size="9.5" fill="#64748b" text-anchor="middle">Databricks jobs</text>
+
+  <text x="1220" y="601" font-size="17" font-weight="700" fill="#9333ea" text-anchor="middle">500</text>
+  <text x="1220" y="616" font-size="9.5" fill="#64748b" text-anchor="middle">Simulated merchants</text>
+
+
+  <!-- ══════════════════════════════════════════════
+       CONNECTION PATHS  (drawn before animated dots
+       so dots render on top)
+  ══════════════════════════════════════════════ -->
+
+  <!-- P1: Payment Gateway → raw-transactions  (straight blue) -->
+  <path id="p1" d="M 174 162 L 202 162"
+        stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <!-- P2: raw-transactions → Bronze Ingestion  (straight blue) -->
+  <path id="p2" d="M 378 162 L 407 162"
+        stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <!-- P3: Bronze → dlq-transactions  (dashed red, back-left curve) -->
+  <path id="p3" d="M 435 194 C 420 224 400 248 378 278"
+        stroke="#ef4444" stroke-width="1.8" fill="none"
+        stroke-dasharray="5,3" marker-end="url(#a-red)"/>
+
+  <!-- P4: Bronze → Silver  (straight vertical blue) -->
+  <path id="p4" d="M 501 194 L 501 310"
+        stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <!-- P5: Silver → Gold  (straight vertical blue) -->
+  <path id="p5" d="M 501 372 L 501 440"
+        stroke="#3b82f6" stroke-width="2.5" fill="none" marker-end="url(#a-blue)"/>
+
+  <!-- P6: Acquiring Bank → settlement-expectations  (straight amber) -->
+  <path id="p6" d="M 174 464 L 202 464"
+        stroke="#f59e0b" stroke-width="2.5" fill="none" marker-end="url(#a-amber)"/>
+
+  <!-- P7: settlement-expectations → Gold  (straight amber) -->
+  <path id="p7" d="M 378 464 L 407 466"
+        stroke="#f59e0b" stroke-width="2.5" fill="none" marker-end="url(#a-amber)"/>
+
+  <!-- P8: Bronze → Delta Lake  (short straight green, same row) -->
+  <path id="p8" d="M 595 163 L 624 163"
+        stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#a-green)"/>
+
+  <!-- P9: Silver → Delta Lake  (curve up-right green) -->
+  <path id="p9" d="M 595 334 C 645 334 690 260 690 194"
+        stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#a-green)"/>
+
+  <!-- P10: Gold → Delta Lake  (big sweep-up green) -->
+  <path id="p10" d="M 595 466 C 665 466 718 290 718 194"
+        stroke="#22c55e" stroke-width="2" fill="none" marker-end="url(#a-green)"/>
+
+  <!-- P11: Gold → Snowflake  (nearly straight sky, labeled 5-min batch) -->
+  <path id="p11" d="M 595 468 L 624 468"
+        stroke="#0ea5e9" stroke-width="2" fill="none" marker-end="url(#a-sky)"/>
+  <text x="609" y="462" font-size="8" fill="#0ea5e9" text-anchor="middle">5 min</text>
+
+  <!-- P12: Gold → reconciliation-alerts Kafka  (dashed purple, back-left side-effect) -->
+  <path id="p12" d="M 420 502 C 400 526 375 546 378 550"
+        stroke="#a855f7" stroke-width="1.8" fill="none"
+        stroke-dasharray="5,3" marker-end="url(#a-purple)"/>
+
+  <!-- P13: reconciliation-alerts → Alert Notifications  (straight purple) -->
+  <path id="p13" d="M 378 574 L 624 574"
+        stroke="#a855f7" stroke-width="2" fill="none" marker-end="url(#a-purple)"/>
+
+
+  <!-- ══════════════════════════════════════════════
+       ANIMATED DOTS  (drawn last → appear on top)
+  ══════════════════════════════════════════════ -->
+
+  <!-- P1 — blue transaction dots (3 staggered) -->
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0s"  ><mpath href="#p1"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.37s"><mpath href="#p1"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.74s"><mpath href="#p1"/></animateMotion></circle>
+
+  <!-- P2 — blue transaction dots (3 staggered) -->
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.1s" ><mpath href="#p2"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.47s"><mpath href="#p2"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.84s"><mpath href="#p2"/></animateMotion></circle>
+
+  <!-- P3 — red error dots (2, sparse — only ~2.5% of records) -->
+  <circle r="4" fill="#ef4444" opacity="0.88"><animateMotion dur="3.5s" repeatCount="indefinite" begin="0s"  ><mpath href="#p3"/></animateMotion></circle>
+  <circle r="4" fill="#ef4444" opacity="0.88"><animateMotion dur="3.5s" repeatCount="indefinite" begin="1.75s"><mpath href="#p3"/></animateMotion></circle>
+
+  <!-- P4 — blue Bronze→Silver (3 staggered) -->
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="2s" repeatCount="indefinite" begin="0s"   ><mpath href="#p4"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="2s" repeatCount="indefinite" begin="0.67s"><mpath href="#p4"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="2s" repeatCount="indefinite" begin="1.34s"><mpath href="#p4"/></animateMotion></circle>
+
+  <!-- P5 — blue Silver→Gold (3 staggered) -->
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.6s" repeatCount="indefinite" begin="0.2s" ><mpath href="#p5"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.6s" repeatCount="indefinite" begin="0.73s"><mpath href="#p5"/></animateMotion></circle>
+  <circle r="5" fill="#3b82f6" opacity="0.92"><animateMotion dur="1.6s" repeatCount="indefinite" begin="1.26s"><mpath href="#p5"/></animateMotion></circle>
+
+  <!-- P6 — amber settlement dots (2) -->
+  <circle r="5" fill="#f59e0b" opacity="0.92"><animateMotion dur="2s" repeatCount="indefinite" begin="0s"><mpath href="#p6"/></animateMotion></circle>
+  <circle r="5" fill="#f59e0b" opacity="0.92"><animateMotion dur="2s" repeatCount="indefinite" begin="1s"><mpath href="#p6"/></animateMotion></circle>
+
+  <!-- P7 — amber settlement-kafka → Gold (2) -->
+  <circle r="5" fill="#f59e0b" opacity="0.92"><animateMotion dur="1.5s" repeatCount="indefinite" begin="0.3s"><mpath href="#p7"/></animateMotion></circle>
+  <circle r="5" fill="#f59e0b" opacity="0.92"><animateMotion dur="1.5s" repeatCount="indefinite" begin="1.05s"><mpath href="#p7"/></animateMotion></circle>
+
+  <!-- P8 — green Bronze→Delta (2) -->
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="1.3s" repeatCount="indefinite" begin="0.4s"><mpath href="#p8"/></animateMotion></circle>
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="1.3s" repeatCount="indefinite" begin="1.05s"><mpath href="#p8"/></animateMotion></circle>
+
+  <!-- P9 — green Silver→Delta curve (2) -->
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="2.6s" repeatCount="indefinite" begin="0s"  ><mpath href="#p9"/></animateMotion></circle>
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="2.6s" repeatCount="indefinite" begin="1.3s"><mpath href="#p9"/></animateMotion></circle>
+
+  <!-- P10 — green Gold→Delta big curve (2) -->
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="3.6s" repeatCount="indefinite" begin="0.6s"><mpath href="#p10"/></animateMotion></circle>
+  <circle r="4" fill="#22c55e" opacity="0.9"><animateMotion dur="3.6s" repeatCount="indefinite" begin="2.4s"><mpath href="#p10"/></animateMotion></circle>
+
+  <!-- P11 — sky Gold→Snowflake (2) -->
+  <circle r="4" fill="#0ea5e9" opacity="0.9"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0s"  ><mpath href="#p11"/></animateMotion></circle>
+  <circle r="4" fill="#0ea5e9" opacity="0.9"><animateMotion dur="1.1s" repeatCount="indefinite" begin="0.55s"><mpath href="#p11"/></animateMotion></circle>
+
+  <!-- P12 — purple Gold→recon-alerts (1, sparse anomaly side-effect) -->
+  <circle r="4" fill="#a855f7" opacity="0.85"><animateMotion dur="2.8s" repeatCount="indefinite" begin="0.5s"><mpath href="#p12"/></animateMotion></circle>
+
+  <!-- P13 — purple recon-alerts → Alert Notifications (2) -->
+  <circle r="4" fill="#a855f7" opacity="0.9"><animateMotion dur="3s" repeatCount="indefinite" begin="0s"  ><mpath href="#p13"/></animateMotion></circle>
+  <circle r="4" fill="#a855f7" opacity="0.9"><animateMotion dur="3s" repeatCount="indefinite" begin="1.5s"><mpath href="#p13"/></animateMotion></circle>
+
+
+  <!-- ══════════════════════════════════════════════
+       LEGEND
+  ══════════════════════════════════════════════ -->
+  <rect x="4" y="646" width="808" height="70" rx="8" fill="white" stroke="#e2e8f0" stroke-width="1"/>
+
+  <!-- Row 1 -->
+  <text x="24" y="666" font-size="10" font-weight="700" fill="#334155">LEGEND:</text>
+
+  <circle cx="85"  cy="664" r="5" fill="#3b82f6"/>
+  <text   x="94"  y="668" font-size="9" fill="#334155">Transaction stream</text>
+
+  <circle cx="205" cy="664" r="5" fill="#f59e0b"/>
+  <text   x="214" y="668" font-size="9" fill="#334155">Settlement stream</text>
+
+  <circle cx="320" cy="664" r="5" fill="#22c55e"/>
+  <text   x="329" y="668" font-size="9" fill="#334155">Delta Lake write</text>
+
+  <circle cx="425" cy="664" r="5" fill="#0ea5e9"/>
+  <text   x="434" y="668" font-size="9" fill="#334155">Snowflake write (5 min batch)</text>
+
+  <circle cx="580" cy="664" r="5" fill="#a855f7"/>
+  <text   x="589" y="668" font-size="9" fill="#334155">Alert routing</text>
+
+  <circle cx="660" cy="664" r="5" fill="#ef4444"/>
+  <text   x="669" y="668" font-size="9" fill="#334155">Error / DLQ</text>
+
+  <!-- Row 2 -->
+  <line x1="24" y1="684" x2="64" y2="684" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="68" y="688" font-size="9" fill="#334155">Side-effect / back-channel</text>
+
+  <text x="200" y="688" font-size="9" fill="#334155">Watermarks:  txn 10 min  ·  settlement 30 min  ·  join state TTL 60 min</text>
+
+  <text x="560" y="688" font-size="9" font-weight="600" fill="#15803d">✓ EOS: Kafka checkpoint + Delta MERGE</text>
+
+</svg>
+
+</body>
+</html>
