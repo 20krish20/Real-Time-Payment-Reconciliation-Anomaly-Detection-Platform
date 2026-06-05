@@ -17,8 +17,10 @@ Payment networks generate millions of card transactions per day. Each transactio
 
 ## Architecture
 
-**[View Interactive Architecture Diagram →](https://20krish20.github.io/Real-Time-Payment-Reconciliation-Anomaly-Detection-Platform/architecture.html)**
-*(Animated data flow — open in browser)*
+[![Architecture Diagram](docs/architecture-preview.png)](https://20krish20.github.io/Real-Time-Payment-Reconciliation-Anomaly-Detection-Platform/architecture.html)
+
+**[View Interactive Diagram with Animated Data Flow →](https://20krish20.github.io/Real-Time-Payment-Reconciliation-Anomaly-Detection-Platform/architecture.html)**
+*(Click image or link to open in browser)*
 
 Five-zone pipeline: Payment Gateway + Acquiring Bank → Kafka topics (raw-transactions, settlement-expectations) → Spark Structured Streaming (Bronze → Silver → Gold) → Delta Lake + Snowflake serving layer + real-time alert routing via reconciliation-alerts Kafka topic. Databricks Asset Bundle orchestrates 4 continuous jobs with Prometheus observability and GitHub Actions CI/CD.
 
