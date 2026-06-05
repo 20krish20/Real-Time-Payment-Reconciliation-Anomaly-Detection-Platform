@@ -17,72 +17,10 @@ Payment networks generate millions of card transactions per day. Each transactio
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                        DATA SOURCES                                          │
-│                                                                              │
-│  Payment Gateway          Acquiring Bank                                     │
-│  (POS / Online / ATM)     (Settlement Batch)                                 │
-│        │                        │                                            │
-│        ▼                        ▼                                            │
-│  ┌───────────┐          ┌──────────────────┐                                 │
-│  │transaction│          │   settlement     │                                 │
-│  │ _producer │          │   _producer      │                                 │
-│  │ (Avro)    │          │   (Avro + delays)│                                 │
-│  └─────┬─────┘          └────────┬─────────┘                                │
-└────────┼────────────────────────┼─────────────────────────────────────────-─┘
-         │                        │
-         ▼                        ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│                    KAFKA (Confluent / local Docker)                         │
-│                                                                            │
-│  ┌─────────────────────┐    ┌──────────────────────────┐                  │
-│  │  raw-transactions   │    │  settlement-expectations  │                  │
-│  │  6 partitions       │    │  3 partitions             │                  │
-│  │  7-day retention    │    │  30-day retention         │                  │
-│  └──────────┬──────────┘    └────────────┬─────────────┘                  │
-│             │  dlq-transactions ◄────────── (malformed messages)           │
-│             │  reconciliation-alerts ◄────── (anomaly routing)             │
-│                                                                            │
-│  Schema Registry (Avro — BACKWARD compatible schema evolution)             │
-└──────────────────────────────────────────────────────────────────────────-─┘
-         │                        │
-         ▼                        ▼
-┌────────────────────────────────────────────────────────────────────────────┐
-│               SPARK STRUCTURED STREAMING (Databricks)                      │
-│                                                                            │
-│  BRONZE: bronze_ingestion.py                                               │
-│  • Avro deserialisation + schema validation (5 quality gates)              │
-│  • DLQ routing via foreachBatch for malformed records                      │
-│  • Delta append — 10s trigger, checkpoint for exactly-once                 │
-│                          │                                                 │
-│  SILVER: silver_dedup.py                                                   │
-│  • Delta MERGE on (transaction_id, merchant_id) — idempotent dedup        │
-│  • Merchant dimension enrichment, timestamp parsing, amount bucketing      │
-│  • 15s trigger                                                             │
-│                          │                                                 │
-│  GOLD: gold_reconciliation.py                                              │
-│  • Stream-to-stream join (10-min txn WM, 30-min settlement WM)            │
-│  • Anomaly scoring: mismatch_pct, severity (NONE/LOW/MED/HIGH/CRITICAL)   │
-│  • Alerts routed to reconciliation-alerts Kafka topic                      │
-│  • Delta MERGE — exactly-once Gold write, 20s trigger                      │
-└──────────────────────────────────────────────────────────────────────────-─┘
-                                  │
-                    ┌─────────────▼─────────────┐
-                    │   SNOWFLAKE (Gold Serving) │
-                    │                           │
-                    │  RECONCILIATION_RESULTS   │
-                    │  ANOMALY_LOG              │
-                    │  V_DAILY_RECON_SUMMARY    │
-                    │  V_CRITICAL_ANOMALIES_24H │
-                    │                           │
-                    │  RBAC:                    │
-                    │   RECONCILIATION_ENGINEER │
-                    │   RECONCILIATION_ANALYST  │
-                    │  Column masking: CARD_ID  │
-                    │  Time-travel: 90 days     │
-                    └───────────────────────────┘
-```
+**[View Interactive Architecture Diagram →](https://20krish20.github.io/Real-Time-Payment-Reconciliation-Anomaly-Detection-Platform/architecture.html)**
+*(Animated data flow — open in browser)*
+
+Five-zone pipeline: Payment Gateway + Acquiring Bank → Kafka topics (raw-transactions, settlement-expectations) → Spark Structured Streaming (Bronze → Silver → Gold) → Delta Lake + Snowflake serving layer + real-time alert routing via reconciliation-alerts Kafka topic. Databricks Asset Bundle orchestrates 4 continuous jobs with Prometheus observability and GitHub Actions CI/CD.
 
 ---
 
